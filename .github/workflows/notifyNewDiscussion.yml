@@ -1,0 +1,46 @@
+# 新しいDiscussionsが作成されたらメールで通知する
+# Resendというサービスを使ってメール送信する
+
+name: Notify New Discussion
+
+# トリガー: 新しいDiscussionが作成されたときに実行
+on:
+  discussion:
+    types: [created]
+
+jobs:
+  send_email_notification:
+    runs-on: ubuntu-latest
+    name: Send Email
+    steps:
+      # --- ステップ1: MarkdownをHTMLに変換 ---
+      # Discussionの本文に加えて、タイトルやURLなどの情報もまとめてHTMLに変換
+      - name: Convert Markdown to HTML
+        id: markdown-to-html
+        uses: ankihalder/markdown-to-html@v2
+        with:
+          markdown: |
+            <h3>新しいDiscussionが作成されました。</h3>
+            <p>
+              <strong>タイトル:</strong> ${{ github.event.discussion.title }}<br>
+              <strong>作成者:</strong> ${{ github.event.discussion.user.login }}<br>
+              <strong>URL:</strong> <a href="${{ github.event.discussion.html_url }}">${{ github.event.discussion.html_url }}</a>
+            </p>
+            <hr>
+            ${{ github.event.discussion.body }}
+
+      # --- ステップ2: 変換したHTMLをメールで送信 ---
+      - name: Send email using Resend
+        uses: avatech-sdks/actions-resend@v1.0.2
+        with:
+          # 送信元メールアドレス (Resendで認証済みのドメイン)
+          from: ${{ secrets.MAIL_FROM }}
+          # 宛先メールアドレス
+          to: ${{ secrets.MAIL_TO }}
+          # 件名
+          subject: '[New Discussion] ${{ github.event.discussion.title }}'
+          # htmlパラメータに、ステップ1で変換したHTMLを指定
+          html: ${{ steps.markdown-to-html.outputs.html }}
+        env:
+          # ResendのAPIキー
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
