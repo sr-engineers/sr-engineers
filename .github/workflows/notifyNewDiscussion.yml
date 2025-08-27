@@ -7,6 +7,7 @@ name: Notify New Discussion
 on:
   discussion:
     types: [created]
+  workflow_dispatch:
 
 jobs:
   send_email_notification:
