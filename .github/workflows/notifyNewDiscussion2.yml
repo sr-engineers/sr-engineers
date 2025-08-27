@@ -1,0 +1,172 @@
+name: Send Email on New Discussion
+
+on:
+  discussion:
+    types: [created]
+  workflow_dispatch: 
+
+jobs:
+  send-notification:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Install Resend
+        run: npm install resend
+      
+      - name: Send Email Notification via Resend
+        uses: actions/github-script@v7
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+        with:
+          script: |
+            const { Resend } = require('resend');
+            
+            // Resend APIクライアントを初期化
+            const resend = new Resend(process.env.RESEND_API_KEY);
+            
+            // Discussion情報を取得
+            const discussion = context.payload.discussion;
+            const repository = context.payload.repository;
+            
+            // メール本文を構成（プレーンテキスト）
+            const emailBody = `
+            新しいDiscussionが作成されました。
+            
+            リポジトリ: ${repository.full_name}
+            作成者: ${discussion.user.login}
+            カテゴリ: ${discussion.category.name}
+            作成日時: ${new Date(discussion.created_at).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}
+            
+            --- 本文 ---
+            ${discussion.body || '(本文なし)'}
+            
+            --- リンク ---
+            ${discussion.html_url}
+            `;
+            
+            // HTMLバージョンのメール本文
+            const emailBodyHtml = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <meta charset="UTF-8">
+              <style>
+                body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; }
+                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                .header { background-color: #24292e; color: white; padding: 20px; border-radius: 6px 6px 0 0; }
+                .content { background-color: #f6f8fa; padding: 20px; border: 1px solid #d1d5da; border-top: none; }
+                .info-table { width: 100%; border-collapse: collapse; background-color: white; margin: 20px 0; }
+                .info-table td { padding: 12px; border: 1px solid #e1e4e8; }
+                .info-table td:first-child { font-weight: bold; background-color: #f6f8fa; width: 30%; }
+                .discussion-body { background-color: white; padding: 16px; border-left: 4px solid #0366d6; margin: 20px 0; border-radius: 3px; }
+                .button { display: inline-block; padding: 10px 20px; background-color: #0366d6; color: white; text-decoration: none; border-radius: 6px; font-weight: 600; }
+                .button:hover { background-color: #0256c7; }
+                .footer { margin-top: 20px; padding-top: 20px; border-top: 1px solid #e1e4e8; color: #586069; font-size: 14px; }
+              </style>
+            </head>
+            <body>
+              <div class="container">
+                <div class="header">
+                  <h2 style="margin: 0;">🔔 新しいDiscussionが作成されました</h2>
+                </div>
+                
+                <div class="content">
+                  <h3 style="color: #24292e; margin-top: 0;">${discussion.title}</h3>
+                  
+                  <table class="info-table">
+                    <tr>
+                      <td>リポジトリ</td>
+                      <td><a href="https://github.com/${repository.full_name}" style="color: #0366d6; text-decoration: none;">${repository.full_name}</a></td>
+                    </tr>
+                    <tr>
+                      <td>作成者</td>
+                      <td>
+                        <img src="${discussion.user.avatar_url}" width="20" height="20" style="border-radius: 50%; vertical-align: middle; margin-right: 5px;">
+                        <a href="https://github.com/${discussion.user.login}" style="color: #0366d6; text-decoration: none;">@${discussion.user.login}</a>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>カテゴリ</td>
+                      <td>
+                        <span style="background-color: #${discussion.category.emoji ? 'f1f8ff' : 'f6f8fa'}; padding: 3px 8px; border-radius: 12px; font-size: 14px;">
+                          ${discussion.category.emoji || '📁'} ${discussion.category.name}
+                        </span>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>作成日時</td>
+                      <td>${new Date(discussion.created_at).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}</td>
+                    </tr>
+                  </table>
+                  
+                  <h4 style="color: #24292e;">本文</h4>
+                  <div class="discussion-body">
+                    ${discussion.body ? discussion.body.replace(/\n/g, '<br>').replace(/```/g, '<code>').replace(/###/g, '<strong>').replace(/##/g, '<strong>') : '<em style="color: #586069;">本文なし</em>'}
+                  </div>
+                  
+                  <div style="text-align: center; margin: 30px 0;">
+                    <a href="${discussion.html_url}" class="button">
+                      Discussionを表示 →
+                    </a>
+                  </div>
+                  
+                  <div class="footer">
+                    <p style="margin: 5px 0;">このメールは GitHub Actions により自動送信されました。</p>
+                    <p style="margin: 5px 0; font-size: 12px;">Repository: <a href="https://github.com/${repository.full_name}" style="color: #586069;">${repository.full_name}</a></p>
+                  </div>
+                </div>
+              </div>
+            </body>
+            </html>
+            `;
+            
+            // Resendでメール送信
+            try {
+              const { data, error } = await resend.emails.send({
+                from: process.env.MAIL_FROM,
+                to: process.env.MAIL_TO,
+                subject: `[${repository.name}] ${discussion.title}`,
+                text: emailBody,
+                html: emailBodyHtml,
+                headers: {
+                  'X-GitHub-Repository': repository.full_name,
+                  'X-GitHub-Discussion-ID': discussion.number.toString(),
+                  'X-GitHub-Discussion-Category': discussion.category.name
+                }
+              });
+              
+              if (error) {
+                console.error('Error sending email:', error);
+                throw new Error(error.message);
+              }
+              
+              console.log('Email sent successfully');
+              console.log(`Email ID: ${data.id}`);
+              console.log(`To: ${process.env.MAIL_TO}`);
+              console.log(`Subject: [${repository.name}] ${discussion.title}`);
+              console.log(`Discussion URL: ${discussion.html_url}`);
+              
+            } catch (error) {
+              console.error('Failed to send email:', error);
+              throw error;
+            }
+      
+      - name: Log Discussion Info
+        run: |
+          echo "✅ Email notification sent"
+          echo "Discussion Title: ${{ github.event.discussion.title }}"
+          echo "Discussion URL: ${{ github.event.discussion.html_url }}"
+          echo "Created by: ${{ github.event.discussion.user.login }}"
+          echo "Category: ${{ github.event.discussion.category.name }}"
+          echo "Repository: ${{ github.repository }}"
+ 
