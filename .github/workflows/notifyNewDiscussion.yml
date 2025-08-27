@@ -14,34 +14,55 @@ jobs:
     runs-on: ubuntu-latest
     name: Send Email
     steps:
-      # --- ステップ1: MarkdownをHTMLに変換 ---
-      # Discussionの本文に加えて、タイトルやURLなどの情報もまとめてHTMLに変換
-      - name: Convert Markdown to HTML
-        id: markdown-to-html
-        uses: ankihalder/markdown-to-html@v2
-        with:
-          markdown: |
-            <h3>新しいDiscussionが作成されました。</h3>
-            <p>
-              <strong>タイトル:</strong> ${{ github.event.discussion.title }}<br>
-              <strong>作成者:</strong> ${{ github.event.discussion.user.login }}<br>
-              <strong>URL:</strong> <a href="${{ github.event.discussion.html_url }}">${{ github.event.discussion.html_url }}</a>
-            </p>
-            <hr>
-            ${{ github.event.discussion.body }}
+      # --- ステップ1: 送信するHTMLコンテンツを作成 ---
+      - name: Create HTML content
+        id: create_html
+        run: |
+          # ヒアドキュメントでHTMLの中身を変数に格納
+          # JSONに埋め込むため、改行をエスケープ(\n)し、全体を1行にする
+          content=$(cat <<EOF
+          <h3>新しいDiscussionが作成されました。</h3>
+          <p>
+            <strong>タイトル:</strong> ${{ github.event.discussion.title || '手動実行テスト' }}<br>
+            <strong>作成者:</strong> ${{ github.event.discussion.user.login || 'N/A' }}<br>
+            <strong>URL:</strong> <a href="${{ github.event.discussion.html_url || github.server_url }}/${{ github.repository }}">${{ github.event.discussion.html_url || 'N/A' }}</a>
+          </p>
+          <hr>
+          EOF
+          )
+          echo "html_content=${content}" >> $GITHUB_OUTPUT
 
-      # --- ステップ2: 変換したHTMLをメールで送信 ---
-      - name: Send email using Resend
-        uses: avatech-sdks/actions-resend@v1.0.2
+      # --- ステップ2: Discussion本文(Markdown)をHTMLに変換 ---
+      - name: Convert Discussion Body to HTML
+        id: markdown_to_html
+        # Discussionの本文が空でない場合のみ実行
+        if: ${{ github.event.discussion.body != '' }}
+        uses: jaywcjlove/markdown-to-html-cli@main
         with:
-          # 送信元メールアドレス (Resendで認証済みのドメイン)
-          from: ${{ secrets.MAIL_FROM }}
-          # 宛先メールアドレス
-          to: ${{ secrets.MAIL_TO }}
-          # 件名
-          subject: '[New Discussion] ${{ github.event.discussion.title }}'
-          # htmlパラメータに、ステップ1で変換したHTMLを指定
-          html: ${{ steps.markdown-to-html.outputs.html }}
+          source: ${{ github.event.discussion.body }}
+          
+      # --- ステップ3: Resend API を直接呼び出してメールを送信 ---
+      - name: Send email via Resend API
         env:
-          # ResendのAPIキー
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+          # Discussionのタイトル。手動実行の場合は固定文字列を使用
+          SUBJECT: "[New Discussion] ${{ github.event.discussion.title || '手動実行テスト' }}"
+          # ステップ1で作成したHTMLとステップ2で変換したHTMLを結合
+          HTML_BODY: "${{ steps.create_html.outputs.html_content }} ${{ steps.markdown_to_html.outputs.html }}"
+        run: |
+          # Resend APIに送信するJSONデータを作成
+          # jq を使って安全にJSONを組み立てる
+          JSON_PAYLOAD=$(jq -n \
+            --arg from "$MAIL_FROM" \
+            --arg to "$MAIL_TO" \
+            --arg subject "$SUBJECT" \
+            --arg html_body "$HTML_BODY" \
+            '{from: $from, to: $to, subject: $subject, html: $html_body}')
+          
+          # curlでResend APIにPOSTリクエストを送信
+          curl -X POST https://api.resend.com/emails \
+            -H "Authorization: Bearer $RESEND_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$JSON_PAYLOAD"
