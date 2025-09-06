@@ -99,7 +99,7 @@ jobs:
           JSON_PAYLOAD=$(jq -n \
             --arg from "$MAIL_FROM" \
             --arg to "$MAIL_TO" \
-            --arg subject "[新しいDiscussion] $DISCUSSION_TITLE" \
+            --arg subject "$DISCUSSION_TITLE" \
             --arg html "$HTML_CONTENT" \
             '{
               from: $from,
