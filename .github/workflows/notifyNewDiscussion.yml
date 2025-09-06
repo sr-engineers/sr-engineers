@@ -27,6 +27,11 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
+      - name: Install pandoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pandoc
+      
       - name: Send Email via Resend API
         env:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
@@ -78,7 +83,7 @@ jobs:
                 </div>
                 <div class="body-content">
                   <strong>本文:</strong><br>
-                  $(echo "$DISCUSSION_BODY" | sed 's/$/\<br\>/g')
+                  $(echo "$DISCUSSION_BODY" | pandoc -f markdown -t html)
                 </div>
                 <div style="text-align: center; margin: 20px 0;">
                   <a href="$DISCUSSION_URL" class="button">Discussionを表示</a>
