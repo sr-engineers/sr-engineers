@@ -22,6 +22,8 @@ on:
         required: true
         type: string
 
+permissions: {}
+
 jobs:
   send-email-notification:
     runs-on: ubuntu-latest
@@ -37,20 +39,13 @@ jobs:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           MAIL_FROM: ${{ secrets.MAIL_FROM }}
           MAIL_TO: ${{ secrets.MAIL_TO }}
+          # ユーザー入力は ${{ }} で run に直接埋め込まず、環境変数経由で渡す（スクリプトインジェクション対策）
+          DISCUSSION_TITLE: ${{ github.event_name == 'discussion' && github.event.discussion.title || inputs.discussion_title }}
+          DISCUSSION_AUTHOR: ${{ github.event_name == 'discussion' && github.event.discussion.user.login || inputs.discussion_author }}
+          DISCUSSION_BODY: ${{ github.event_name == 'discussion' && github.event.discussion.body || inputs.discussion_body }}
+          DISCUSSION_URL: ${{ github.event_name == 'discussion' && github.event.discussion.html_url || inputs.discussion_url }}
         run: |
-          # Create email content (handle both discussion event and manual workflow_dispatch)
-          if [ "${{ github.event_name }}" = "discussion" ]; then
-            DISCUSSION_TITLE="${{ github.event.discussion.title }}"
-            DISCUSSION_AUTHOR="${{ github.event.discussion.user.login }}"
-            DISCUSSION_BODY="${{ github.event.discussion.body }}"
-            DISCUSSION_URL="${{ github.event.discussion.html_url }}"
-          else
-            DISCUSSION_TITLE="${{ inputs.discussion_title }}"
-            DISCUSSION_AUTHOR="${{ inputs.discussion_author }}"
-            DISCUSSION_BODY="${{ inputs.discussion_body }}"
-            DISCUSSION_URL="${{ inputs.discussion_url }}"
-          fi
-          
+
           # Escape body content for JSON
           ESCAPED_BODY=$(echo "$DISCUSSION_BODY" | jq -Rs .)
           
